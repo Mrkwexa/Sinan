@@ -85,9 +85,70 @@
       });
     });
   }
+  /* ---------- admin panel (only the admin sees the button) ---------- */
+  const ERR={bad_email:'ئیمەیڵەکە دروست نییە',weak_password:'وشەی نهێنی دەبێت لانیکەم ٨ پیت بێت',self:'ناتوانیت خۆت بسڕیتەوە'};
+  async function call(body){
+    const {data,error}=await sb.functions.invoke('manage-users',{body});
+    if(error){
+      let j=null; try{j=await error.context.json();}catch(e){}
+      const err=new Error((j&&j.error)||error.message); err.status=error.context&&error.context.status; throw err;
+    }
+    return data;
+  }
+  function adminPanel(){
+    const o=document.createElement('div');
+    o.style.cssText='position:fixed;inset:0;z-index:90;background:var(--bg);overflow:auto;padding:16px';
+    o.innerHTML=`<div class="wrap" style="max-width:480px" dir="rtl" lang="ckb">
+      <div class="card"><h2>کارمەندەکان</h2>
+        <p class="note">تەنها ئەو ئیمەیڵانەی لێرە هەن دەتوانن بچنە ژوورەوە.</p>
+        <div id="auL" class="list"></div></div>
+      <form class="card" id="auF"><h3>زیادکردنی کارمەند</h3>
+        <label class="fld"><span>ئیمەیڵ</span><input id="auE" class="in num" type="email" autocomplete="off" required></label>
+        <label class="fld"><span>وشەی نهێنی (لانیکەم ٨ پیت)</span><input id="auP" class="in num" type="text" autocomplete="off" minlength="8" required></label>
+        <p id="auM" class="note" role="alert"></p>
+        <button class="btn primary" type="submit">زیادکردن</button></form>
+      <div class="card"><button class="btn" id="auOut" type="button">دەرچوون لە هەژمار</button>
+        <button class="btn ghost" id="auX" type="button">داخستن</button></div></div>`;
+    document.body.appendChild(o);
+    const L=o.querySelector('#auL'), M=o.querySelector('#auM');
+    const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    async function refresh(){
+      try{
+        const {users}=await call({action:'list'});
+        L.innerHTML=users.map(u=>`<div class="li"><span class="grow num">${esc(u.email)}</span>${u.is_admin?'<span class="pill good">بەڕێوەبەر</span>':`<button class="btn ghost" data-rm="${esc(u.email)}" type="button">سڕینەوە</button>`}</div>`).join('');
+      }catch(e){L.textContent='هەڵە ڕوویدا';}
+    }
+    L.addEventListener('click',async ev=>{
+      const b=ev.target.closest('[data-rm]'); if(!b) return;
+      if(!confirm('ئەم کارمەندە دەسەڵاتی لەدەست دەدات. دڵنیایت؟')) return;
+      try{await call({action:'remove',email:b.dataset.rm});}catch(e){M.textContent=ERR[e.message]||'هەڵە ڕوویدا';}
+      refresh();
+    });
+    o.querySelector('#auF').addEventListener('submit',async ev=>{
+      ev.preventDefault(); M.textContent='';
+      const em=o.querySelector('#auE'), pw=o.querySelector('#auP');
+      try{
+        await call({action:'add',email:em.value,password:pw.value});
+        em.value=''; pw.value=''; M.textContent='زیادکرا';
+      }catch(e){M.textContent=ERR[e.message]||'هەڵە ڕوویدا';}
+      refresh();
+    });
+    o.querySelector('#auX').onclick=()=>o.remove();
+    o.querySelector('#auOut').onclick=()=>window.SB.logout();
+    refresh();
+  }
+  async function setupAdmin(){
+    try{ await call({action:'list'}); }catch(e){ return; } // not an admin: no button
+    const bar=document.querySelector('.appbar-in'); if(!bar||document.getElementById('adminBtn')) return;
+    const b=document.createElement('button');
+    b.id='adminBtn'; b.type='button'; b.className='chip'; b.textContent='کارمەندەکان'; b.style.cssText='border:0;cursor:pointer';
+    b.onclick=adminPanel;
+    bar.insertBefore(b,document.getElementById('conn'));
+  }
   async function open(){
     const {data}=await sb.auth.getSession();
     if(!data.session) await loginScreen();
+    setupAdmin();
     return db;
   }
   window.SB={open,downloads,client:sb,logout:()=>sb.auth.signOut().then(()=>location.reload())};

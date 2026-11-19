@@ -740,9 +740,8 @@ function wire(){
 }
 async function connect(){
   try{
-    const c=window.claude;
-    if(c&&c.use){db=await c.use('db'); dl=await c.use('downloads');}
-  }catch(e){db=null;}
+    db=await SB.open(); dl=SB.downloads;
+  }catch(e){console.error(e);db=null;}
   const chip=$('#conn');
   chip.textContent=db?'پەیوەستە':'بێ پەیوەندی'; chip.className='chip '+(db?'good':'bad');
   if(db){

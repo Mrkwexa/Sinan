@@ -1,0 +1,92 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>بەنزینخانە</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+
+<header class="appbar pad">
+  <div class="appbar-in">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="4" width="14" height="24" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="8.5" y="8" width="7" height="6" rx="1" fill="currentColor"/><path d="M19 12h3.5a2.5 2.5 0 0 1 2.5 2.5V22a1.8 1.8 0 0 0 3.6 0V13l-3.2-3.2M3 28h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <h1>بەنزینخانە</h1>
+    </div>
+    <span id="conn" class="chip">…</span>
+  </div>
+</header>
+
+<main id="app" dir="rtl" lang="ckb" class="wrap pad">
+  <section id="ctx" class="sec">
+    <div class="card">
+      <div class="ctx">
+        <label class="fld"><span>بەروار</span><input id="shiftDate" class="in num" type="date"></label>
+        <div class="fld"><span id="segLbl">شەفت</span>
+          <div class="seg" role="radiogroup" aria-labelledby="segLbl">
+            <button type="button" role="radio" data-shift="1" aria-checked="false">شەفتی یەکەم</button>
+            <button type="button" role="radio" data-shift="2" aria-checked="false">شەفتی دووەم</button>
+          </div></div>
+        <label class="fld full"><span>ناوی کارمەندی شەفت</span><input id="worker" class="in" autocomplete="off" placeholder="بۆ نموونە: ئاری"></label>
+      </div>
+      <div class="hint"><span id="st" class="pill">…</span></div>
+    </div>
+  </section>
+
+  <section id="v-shift" class="sec">
+    <div class="jump" aria-label="بازدان بۆ بەش">
+      <button type="button" data-jump="sec-pumps">پەمپەکان</button>
+      <button type="button" data-jump="sec-credit">قەرز</button>
+      <button type="button" data-jump="sec-exp">خەرجی</button>
+      <button type="button" data-jump="sec-chg">گۆڕینی نرخ</button>
+    </div>
+    <div id="shiftBody" class="sec"></div>
+  </section>
+
+  <section id="v-tanks" class="sec" hidden>
+    <div class="jump" aria-label="بازدان بۆ بەش">
+      <button type="button" data-jump="sec-tanks">تانکییەکان</button>
+      <button type="button" data-jump="sec-del">هاتنی سوتەمەنی</button>
+    </div>
+    <div id="tankBody" class="sec"></div>
+  </section>
+
+  <section id="v-report" class="sec" hidden>
+    <div class="card">
+      <h2>ڕاپۆرتی ڕۆژانە</h2>
+      <div class="datebar">
+        <button class="btn ghost" id="repPrev" aria-label="ڕۆژی پێشوو">→</button>
+        <label class="fld"><span>بەروار</span><input id="repDate" class="in num" type="date"></label>
+        <button class="btn ghost" id="repNext" aria-label="ڕۆژی دواتر">←</button>
+      </div>
+      <button class="btn" id="repCsv">دابەزاندنی ڕاپۆرت (CSV)</button>
+    </div>
+    <div id="repBody" class="sec"></div>
+  </section>
+
+  <section id="v-credit" class="sec" hidden><div id="crBody" class="sec"></div></section>
+  <section id="v-prices" class="sec" hidden><div id="prBody" class="sec"></div></section>
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<div class="dock">
+  <div class="dock-in">
+    <div id="act" class="act">
+      <div class="sum">
+        <div><small>کۆی فرۆشتن</small><b id="s-sales" class="num">0</b></div>
+        <div><small>قەرز</small><b id="s-credit" class="num">0</b></div>
+        <div class="cash"><small>نەقد</small><b id="s-cash" class="num">0</b></div>
+      </div>
+      <button id="save" class="btn primary">پاشەکەوت بکە</button>
+    </div>
+    <nav class="tabs" aria-label="بەشەکان">
+      <button data-go="shift"><svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 11h6M9 15h4"/></svg>شەفت</button>
+      <button data-go="tanks"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></svg>تانکی</button>
+      <button data-go="report"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>ڕاپۆرت</button>
+      <button data-go="credit"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.8a3.5 3.5 0 0 1 0 6.4M18 14.5a6 6 0 0 1 3.5 5.5"/></svg>قەرزەکان</button>
+      <button data-go="prices"><svg viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="8.5" r="1.3"/></svg>نرخەکان</button>
+    </nav>
+  </div>
+</div>
+
+<script src="app.js"></script>
+
+</body></html>

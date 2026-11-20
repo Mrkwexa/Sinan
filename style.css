@@ -70,6 +70,7 @@ select.in{padding-inline:10px}
 .ctx .full{grid-column:1/-1}
 @media (max-width:440px){.ctx>.fld:not(.full){grid-column:1/-1}}
 .seg{display:grid; grid-template-columns:1fr 1fr; background:var(--surface2); border-radius:12px; padding:4px; gap:4px}
+.seg.three{grid-template-columns:repeat(3,1fr)}
 .seg button{font:inherit; font-weight:700; font-size:16px; min-height:42px; border:0; border-radius:9px; background:transparent; color:var(--muted); cursor:pointer}
 .seg button[aria-checked="true"]{background:var(--accent); color:var(--accent-fg)}
 .jump{display:flex; gap:8px; overflow-x:auto; padding-bottom:2px; scrollbar-width:none}

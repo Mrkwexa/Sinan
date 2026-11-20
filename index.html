@@ -48,16 +48,23 @@
   </section>
 
   <section id="v-report" class="sec" hidden>
-    <div class="card">
-      <h2>ڕاپۆرتی ڕۆژانە</h2>
-      <div class="datebar">
-        <button class="btn ghost" id="repPrev" aria-label="ڕۆژی پێشوو">→</button>
-        <label class="fld"><span>بەروار</span><input id="repDate" class="in num" type="date"></label>
-        <button class="btn ghost" id="repNext" aria-label="ڕۆژی دواتر">←</button>
-      </div>
-      <button class="btn" id="repCsv">دابەزاندنی ڕاپۆرت (CSV)</button>
+    <div class="seg" role="radiogroup" aria-label="جۆری ڕاپۆرت">
+      <button type="button" role="radio" data-rep="day" aria-checked="true">ڕۆژانە</button>
+      <button type="button" role="radio" data-rep="cust" aria-checked="false">قەرزی کڕیار</button>
     </div>
-    <div id="repBody" class="sec"></div>
+    <div id="repDay" class="sec">
+      <div class="card">
+        <h2>ڕاپۆرتی ڕۆژانە</h2>
+        <div class="datebar">
+          <button class="btn ghost" id="repPrev" aria-label="ڕۆژی پێشوو">→</button>
+          <label class="fld"><span>بەروار</span><input id="repDate" class="in num" type="date"></label>
+          <button class="btn ghost" id="repNext" aria-label="ڕۆژی دواتر">←</button>
+        </div>
+        <button class="btn" id="repCsv">دابەزاندنی ڕاپۆرت (CSV)</button>
+      </div>
+      <div id="repBody" class="sec"></div>
+    </div>
+    <div id="repCust" class="sec" hidden><div id="rcBody" class="sec"></div></div>
   </section>
 
   <section id="v-credit" class="sec" hidden><div id="crBody" class="sec"></div></section>

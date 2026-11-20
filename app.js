@@ -503,6 +503,54 @@ function renderReport(){
   box.innerHTML=h;
 }
 function csvRow(a){return a.map(x=>{const s=x==null?'':String(x);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(',');}
+/* ---------- per-customer debt report ---------- */
+let repMode='day', rcCust='', rcFrom='', rcTo='';
+function setRepMode(m){
+  repMode=m;
+  $$('[data-rep]').forEach(b=>b.setAttribute('aria-checked',String(b.dataset.rep===m)));
+  $('#repDay').hidden=m!=='day'; $('#repCust').hidden=m!=='cust';
+  if(m==='cust') loadCustRep(); else loadReport();
+}
+async function loadCustRep(){ await guard(async()=>{await loadCustomers();await loadCredit();}); renderCustRep(); }
+const rcPrice=e=>e.price||(e.liters?Math.round((+e.amount||0)/e.liters):null);
+const rcFuel=e=>FUEL[e.fuel]?sw(e.fuel)+' '+FUEL[e.fuel].n:'نەقد / شتی دیکە';
+function custRepRows(){
+  return allEntries().filter(e=>e.kind==='sale'&&e.customerId===rcCust&&(!rcFrom||e.date>=rcFrom)&&(!rcTo||e.date<=rcTo))
+    .sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.ts||0)-(b.ts||0));
+}
+function renderCustRep(){
+  const box=$('#rcBody');
+  if(!db){box.innerHTML=`<div class="card"><p class="empty">پەیوەندی بە داتابەیسەوە نییە.</p></div>`;return;}
+  if(!customers.length){box.innerHTML=`<div class="card"><p class="empty">هێشتا هیچ کڕیارێک تۆمار نەکراوە.</p></div>`;return;}
+  if(!customers.some(c=>c.id===rcCust)) rcCust=customers[0].id;
+  const rows=custRepRows(), bal=balances()[rcCust]||0;
+  const totL=rows.reduce((t,e)=>t+(+e.liters||0),0), totA=rows.reduce((t,e)=>t+(+e.amount||0),0);
+  const byFuel={}; rows.forEach(e=>{const k=FUEL[e.fuel]?e.fuel:'cash'; const o=byFuel[k]||(byFuel[k]={l:0,a:0,n:0}); o.l+=+e.liters||0; o.a+=+e.amount||0; o.n++;});
+  const keys=[...FUELS.map(f=>f.k),'cash'].filter(k=>byFuel[k]);
+  const plates=[...new Set(rows.map(e=>(e.plate||'').trim()).filter(Boolean))];
+  box.innerHTML=`<div class="card"><h2>ڕاپۆرتی قەرزی کڕیار</h2><div class="formgrid">
+      <label class="fld"><span>کڕیار</span><select class="in" id="rcCust">${customers.map(c=>`<option value="${esc(c.id)}" ${c.id===rcCust?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label>
+      <label class="fld"><span>لە بەرواری</span><input class="in num" id="rcFrom" type="date" value="${esc(rcFrom)}"></label>
+      <label class="fld"><span>تا بەرواری</span><input class="in num" id="rcTo" type="date" value="${esc(rcTo)}"></label></div>
+      <button class="btn" id="rcCsv">دابەزاندنی ڕاپۆرت (CSV)</button></div>
+    <div class="tiles"><div class="tile key"><small>کۆی پارە لەم ماوەیە (دینار)</small><b class="num">${fmt(totA)}</b></div>
+      <div class="tile"><small>کۆی لیتر</small><b class="num">${fmtL(totL)}</b></div>
+      <div class="tile"><small>قەرزی ماوە (هەموو کات)</small><b class="num">${fmt(bal)}</b></div></div>
+    <div class="card"><h3>جۆری سوتەمەنی و ئۆتۆمبێل</h3>
+      ${keys.length?`<div class="scroll"><table class="tbl" style="min-width:0"><thead><tr><th>جۆر</th><th>جار</th><th>لیتر</th><th>بڕی پارە</th></tr></thead><tbody>${keys.map(k=>`<tr><td>${k==='cash'?'نەقد / شتی دیکە':sw(k)+' '+FUEL[k].n}</td><td class="num">${byFuel[k].n}</td><td class="num">${byFuel[k].l?fmtL(byFuel[k].l):'—'}</td><td class="num">${fmt(byFuel[k].a)}</td></tr>`).join('')}</tbody></table></div>`:`<p class="empty">لەم ماوەیەدا قەرز نییە.</p>`}
+      <p class="note">ژمارەی ئۆتۆمبێل: ${plates.length?plates.map(x=>`<b dir="auto">${esc(x)}</b>`).join(' · '):'—'}</p></div>
+    <div class="card"><h3>وردەکاری هەر بەروارێک</h3>
+      ${rows.length?`<div class="scroll"><table class="tbl"><thead><tr><th>بەروار</th><th>سوتەمەنی</th><th>نرخ</th><th>لیتر</th><th>بڕی پارە</th><th>ئۆتۆمبێل</th></tr></thead><tbody>${rows.map(e=>`<tr><td class="num">${esc(e.date)}</td><td>${rcFuel(e)}</td><td class="num">${rcPrice(e)?fmt(rcPrice(e)):'—'}</td><td class="num">${e.liters?fmtL(e.liters):'—'}</td><td class="num">${fmt(e.amount)}</td><td dir="auto">${esc(e.plate||'—')}</td></tr>`).join('')}</tbody><tfoot><tr><td>کۆ</td><td></td><td></td><td class="num">${fmtL(totL)}</td><td class="num">${fmt(totA)}</td><td></td></tr></tfoot></table></div>`:`<p class="empty">هیچ قەرزێک لەم ماوەیەدا نییە.</p>`}</div>`;
+}
+async function exportCustCsv(){
+  if(!dl) return toast('دابەزاندن لێرە بەردەست نییە','warn');
+  const c=customers.find(x=>x.id===rcCust), rows=custRepRows(); if(!c||!rows.length) return toast('هیچ قەرزێک نییە بۆ دابەزاندن','warn');
+  const out=[['Customer',c.name],['From',rcFrom||''],['To',rcTo||''],[],['Date','Fuel','Price','Liters','Amount IQD','Plate','Note']];
+  rows.forEach(e=>out.push([e.date,FUEL[e.fuel]?FUEL[e.fuel].n:'Cash/other',rcPrice(e)||'',e.liters||'',e.amount,e.plate||'',e.note||'']));
+  out.push([]); out.push(['Total','','',rows.reduce((t,e)=>t+(+e.liters||0),0),rows.reduce((t,e)=>t+(+e.amount||0),0)]);
+  try{await dl.save({filename:'customer-'+c.name.replace(/[^\w\u0600-\u06FF-]+/g,'_')+'-report.csv',data:'\ufeff'+out.map(csvRow).join('\n')});}
+  catch(e){if(!e||e.code!=='declined') toast('دابەزاندن سەرنەکەوت','bad');}
+}
 async function exportCsv(){
   if(!REP||!REP.shifts.length) return toast('یەکەم ڕۆژێک بکەرەوە کە شەفتی تێدا پاشەکەوت کرابێت','warn');
   if(!dl) return toast('دابەزاندن لێرە بەردەست نییە','warn');
@@ -722,7 +770,7 @@ async function show(v){
   $('#act').hidden=!(v==='shift'||v==='tanks');
   $('#ctx').hidden=!(v==='shift'||v==='tanks');
   window.scrollTo(0,0);
-  if(v==='report') loadReport();
+  if(v==='report') (repMode==='cust'?loadCustRep():loadReport());
   else if(v==='credit'){await guard(async()=>{await loadCustomers();await loadCredit();});renderCredit();}
   else if(v==='prices') renderPrices();
   else if(S&&v==='shift'){await guard(async()=>{await loadCustomers();await loadCredit();});renderShiftCredit();recalc();}
@@ -741,7 +789,7 @@ function wire(){
     if(dirty){toast('یەکەم گۆڕانکارییەکانت پاشەکەوت بکە','warn');e.target.value=S.date;return;}
     openShift(e.target.value,S.no);
   });
-  $$('.seg button').forEach(b=>b.addEventListener('click',()=>{const no=+b.dataset.shift; if(no!==S.no) pickShift(no);}));
+  $$('.seg button[data-shift]').forEach(b=>b.addEventListener('click',()=>{const no=+b.dataset.shift; if(no!==S.no) pickShift(no);}));
   $$('.jump button').forEach(b=>b.addEventListener('click',()=>{const el=document.getElementById(b.dataset.jump); if(el) el.scrollIntoView({behavior:'smooth',block:'start'});}));
   $('#app').addEventListener('input',e=>{
     const t=e.target, id=t.id||''; let m;
@@ -792,6 +840,16 @@ function wire(){
   $('#repPrev').addEventListener('click',()=>{$('#repDate').value=shiftDay($('#repDate').value||today(),1);loadReport();});
   $('#repNext').addEventListener('click',()=>{$('#repDate').value=shiftDay($('#repDate').value||today(),-1);loadReport();});
   $('#repCsv').addEventListener('click',exportCsv);
+  $('#v-report').addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    if(b.dataset.rep) setRepMode(b.dataset.rep);
+    else if(b.id==='rcCsv') exportCustCsv();
+  });
+  $('#rcBody').addEventListener('change',e=>{
+    const id=e.target.id;
+    if(id==='rcCust') rcCust=e.target.value; else if(id==='rcFrom') rcFrom=e.target.value; else if(id==='rcTo') rcTo=e.target.value; else return;
+    renderCustRep();
+  });
   $('#crBody').addEventListener('click',e=>{
     const c=e.target.closest('[data-cust]'); if(c){selCust=c.dataset.cust;stFrom='';stTo='';renderCredit();window.scrollTo(0,0);return;}
     const a=e.target.closest('[data-act]'); if(!a) return;

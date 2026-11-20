@@ -258,7 +258,7 @@ const shiftCredit=()=>(credit.months.get(S.date.slice(0,7))||[]).filter(e=>e.kin
 /* ----- credit entry form: 3 modes (list / manual / expense), liters <-> amount ----- */
 let crMode='list', crTouched=false;
 const calcLast={cr:null,n:null};
-const CR_MODES=[['list','لیست'],['manual','دەستی'],['expense','خەرجی']];
+const CR_MODES=[['list','لیست'],['manual','دەستی']];
 function creditPrice(p,fuel){
   if(!FUEL[fuel]) return 0;
   if(p==='cr') return N(S&&S.prices[fuel])||0;
@@ -268,9 +268,9 @@ function creditPrice(p,fuel){
 function creditCalc(p,src){
   const fuelEl=$('#'+p+'Fuel'), L=$('#'+p+'L'), A=$('#'+p+'Amt'), hint=$('#'+p+'Hint');
   if(!fuelEl||!L||!A) return;
-  const fuel=fuelEl.value, price=creditPrice(p,fuel), off=p==='cr'&&crMode==='expense';
-  if(hint) hint.textContent=(!off&&FUEL[fuel])?(price?`نرخ: ${fmt(price)} دینار بۆ هەر لیترێک`:`نرخی ${FUEL[fuel].n} دانەنراوە`):'';
-  if(off||!FUEL[fuel]||!price) return;
+  const fuel=fuelEl.value, price=creditPrice(p,fuel);
+  if(hint) hint.textContent=FUEL[fuel]?(price?`نرخ: ${fmt(price)} دینار بۆ هەر لیترێک`:`نرخی ${FUEL[fuel].n} دانەنراوە`):'';
+  if(!FUEL[fuel]||!price) return;
   const s=src||calcLast[p]; if(src) calcLast[p]=src;
   if(s==='L'){const l=N(L.value); A.value=l>0?String(Math.round(l*price)):'';}
   else if(s==='A'){const a=N(A.value); L.value=a>0?String(Math.round(a/price*100)/100):'';}
@@ -298,14 +298,12 @@ function renderShiftCredit(){
       ?`<select class="in" id="crCust">${customers.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>`
       :`<p class="note">هێشتا کڕیار نییە. لە بەشی <a href="#credit">قەرزەکان</a> زیادی بکە، یان «دەستی» هەڵبژێرە.</p>`}</div>
     <label class="fld" data-crm="manual"><span>ناوی ئەو کەسەی قەرزت پێداوە</span><input class="in" id="crName" autocomplete="off"></label>
-    <label class="fld" data-crm="expense"><span>جۆری خەرجی</span><select class="in" id="crCat">${EXP_CATS.map(c=>`<option>${c}</option>`).join('')}</select></label>
-    <label class="fld" data-crm="expense"><span>ناوی کڕیار یان کەس (ئارەزوومەندانە)</span><input class="in" id="crWho" autocomplete="off"></label>
     <label class="fld" data-crm="list manual"><span>جۆری سوتەمەنی</span><select class="in" id="crFuel">${FUELS.map(f=>`<option value="${f.k}">${f.n}</option>`).join('')}</select></label>
     <label class="fld" data-crm="list manual"><span>چەند لیتر</span><input class="in num" id="crL" inputmode="decimal" dir="ltr"></label>
-    <label class="fld" data-crm="list manual expense"><span>بڕی پارە (دینار)</span><input class="in num" id="crAmt" inputmode="decimal" dir="ltr"></label>
+    <label class="fld" data-crm="list manual"><span>بڕی پارە (دینار)</span><input class="in num" id="crAmt" inputmode="decimal" dir="ltr"></label>
     <label class="fld" data-crm="list manual"><span>ژمارەی ئۆتۆمبێل (ئارەزوومەندانە)</span><input class="in" id="crPlate" autocomplete="off" dir="auto"></label>
     <label class="fld" data-crm="list manual"><span>کاتی دانەوە</span><input class="in num" id="crDue" type="date"></label>
-    <label class="fld" data-crm="list manual expense"><span>تێبینی</span><input class="in" id="crNote" autocomplete="off"></label></div>
+    <label class="fld" data-crm="list manual"><span>تێبینی</span><input class="in" id="crNote" autocomplete="off"></label></div>
     <p class="note" id="crHint" data-crm="list manual"></p>
     <button class="btn primary" id="crAdd">قەرزەکە تۆمار بکە</button>`;
   h+=`<div class="list">`+(list.length?list.map(e=>`<div class="li"><div class="grow"><b>${esc(entName(e))}</b>${MODE_LBL[e.mode]?` <span class="pill">${MODE_LBL[e.mode]}</span>`:''}<br><small class="muted">${credDesc(e)}</small></div>
@@ -404,23 +402,13 @@ async function saveShift(){
 }
 async function addShiftCredit(){
   const mode=crMode, note=$('#crNote').value.trim(), aIn=N($('#crAmt').value);
-  if(mode==='expense'){
-    if(!(aIn>0)) return toast('بڕی خەرجییەکە بنووسە','warn');
-    if(!db) return toast('پەیوەندی بە داتابەیسەوە نییە','bad');
-    return guard(async()=>{
-      await db.collection('expenses').add({date:S.date,shiftKey:S.key,cat:$('#crCat').value,who:$('#crWho').value.trim(),amount:Math.round(aIn),note,ts:Date.now()});
-      expenses=await loadExpenses(S.date); renderShiftCredit(); renderShiftExp(); recalc(); toast('خەرجییەکە تۆمار کرا');
-    });
-  }
   const due=$('#crDue').value||null;
   let cid=null, name='', plate='', fuel='cash', lIn=null, price=0;
   if(mode==='list'){
     cid=($('#crCust')||{}).value||'';
     if(!cid) return toast('کڕیارێک لە لیستەکە هەڵبژێرە','warn');
   }else name=$('#crName').value.trim();
-  if(mode!=='expense'){
-    fuel=$('#crFuel').value; plate=$('#crPlate').value.trim(); lIn=N($('#crL').value); price=N(S.prices[fuel])||0;
-  }
+  fuel=$('#crFuel').value; plate=$('#crPlate').value.trim(); lIn=N($('#crL').value); price=N(S.prices[fuel])||0;
   const r=resolveCredit(fuel,lIn,aIn,price,calcLast.cr);
   if(r.err) return toast(r.err,'warn');
   if(!db) return toast('پەیوەندی بە داتابەیسەوە نییە','bad');

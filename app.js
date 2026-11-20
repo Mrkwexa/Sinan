@@ -66,7 +66,8 @@ let db=null, dl=null;
 let cfg={prices:{},start:null};
 let customers=[];
 const credit={months:new Map()};
-let expenses=[], repExp=[], priceList=[], monthExp=[];
+let expenses=[], repExp=[], priceList=[];
+let stFrom='', stTo='';
 let S=null, dirty=false, loadTok=0, repTok=0, view='shift', selCust=null, REP=null, saving=false;
 let tt;
 function toast(msg,kind){const t=$('#toast');t.textContent=msg;t.className='toast show '+(kind||'');clearTimeout(tt);tt=setTimeout(()=>{t.className='toast';},3000);}
@@ -117,12 +118,6 @@ const fuelLabel=k=>FUEL[k]?FUEL[k].n:'نەقد / شتی دیکە';
 const credDesc=e=>(e.mode==='expense'?'خەرجی':fuelLabel(e.fuel))+(e.liters?` · <span class="num">${fmtL(e.liters)}</span> لیتر`:'')+(e.plate?` · ئۆتۆمبێل <span class="num">${esc(e.plate)}</span>`:'')+(e.note?` · ${esc(e.note)}`:'');
 const EXP_CATS=['مووچە','کارەبا و گەنەراتۆر','چاککردنەوە','خواردن و چا','پاککردنەوە','خاتری کڕیار','گەڕاندنەوەی سوتەمەنی','دیکە'];
 const expLine=e=>[e.who,e.note].filter(Boolean).map(esc).join(' · ');
-async function loadMonthExpenses(){
-  if(!db) return;
-  const m=curMonth();
-  const q=await db.collection('expenses').where('date','>=',m+'-01').where('date','<=',m+'-31').get();
-  monthExp=q.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.ts||0)-(a.ts||0));
-}
 async function loadPrices(){
   if(!db) return;
   const q=await db.collection('prices').get();
@@ -299,7 +294,7 @@ function renderShiftCredit(){
     <label class="fld" data-crm="list manual expense"><span>تێبینی</span><input class="in" id="crNote" autocomplete="off"></label></div>
     <p class="note" id="crHint" data-crm="list manual"></p>
     <button class="btn primary" id="crAdd">قەرزەکە تۆمار بکە</button>`;
-  h+=`<div class="list" data-crm="list manual">`+(list.length?list.map(e=>`<div class="li"><div class="grow"><b>${esc(entName(e))}</b>${MODE_LBL[e.mode]?` <span class="pill">${MODE_LBL[e.mode]}</span>`:''}<br><small class="muted">${credDesc(e)}</small></div>
+  h+=`<div class="list" data-crm="list manual">`+(list.length?list.map(e=>`<div class="li"><div class="grow"><b>${esc(entName(e))}</b>${MODE_LBL[e.mode]?` <span class="pill">${MODE_LBL[e.mode]}</span>`:''}<br><small class="muted"><span class="num">${esc(e.date)}</span> · ${credDesc(e)}</small></div>
     <span class="amt num">${fmt(e.amount)}</span><button class="icon" data-del="credit:${esc(e.id)}" aria-label="لابردن">×</button></div>`).join('')
     :`<p class="empty">لەم شەفتەدا قەرز نەدراوە.</p>`)+`</div><div class="list" id="crExpList" data-crm="expense">${expListHtml()}</div>`;
   $('#crBox').innerHTML=h; applyCrMode();
@@ -534,9 +529,18 @@ function renderCredit(){
     if(!c){selCust=null;return renderCredit();}
     const b=bal[c.id]||0;
     const ents=allEntries().filter(e=>e.customerId===c.id).sort((a,b2)=>(b2.ts||0)-(a.ts||0));
+    const inR=e=>(!stFrom||e.date>=stFrom)&&(!stTo||e.date<=stTo);
+    const rEnts=ents.filter(inR).sort((x,y)=>x.date<y.date?1:x.date>y.date?-1:(y.ts||0)-(x.ts||0));
+    const rSales=rEnts.filter(e=>e.kind==='sale'), rPays=rEnts.filter(e=>e.kind==='pay');
+    const sum=(arr,k)=>arr.reduce((t,e)=>t+(+e[k]||0),0);
+    const byFuel={}; rSales.forEach(e=>{const k=FUEL[e.fuel]?e.fuel:'cash'; const o=byFuel[k]||(byFuel[k]={l:0,a:0}); o.l+=+e.liters||0; o.a+=+e.amount||0;});
+    const fuelKeys=[...FUELS.map(f=>f.k),'cash'].filter(k=>byFuel[k]);
+    const settledTo=ents.filter(e=>e.kind==='pay'&&e.settledTo).reduce((m,e)=>e.settledTo>m?e.settledTo:m,'');
+    const afterSettled=settledTo?sum(ents.filter(e=>e.kind==='sale'&&e.date>settledTo),'amount'):0;
     let h=`<div><button class="btn ghost" data-act="back">→ گەڕانەوە بۆ کڕیارەکان</button></div>
       <div class="card"><div class="hint"><h2>${esc(c.name)}</h2></div>
       <div class="tiles"><div class="tile key"><small>قەرزی ماوە (دینار)</small><b class="num">${fmt(b)}</b></div></div>
+      ${settledTo?`<p class="note">تا بەرواری <b class="num">${esc(settledTo)}</b> پارەکەی واسڵ کراوە · قەرزی دوای ئەو بەروارە: <b class="num">${fmt(afterSettled)}</b></p>`:''}
       <p class="note">${c.phone?`ژمارەی مۆبایل: <span class="num">${esc(c.phone)}</span> · `:''}قەرزی کۆن: <span class="num">${fmt(N(c.open)||0)}</span></p></div>
       <div class="card"><h3>قەرزی نوێ</h3><div class="formgrid">
         <label class="fld"><span>بەروار</span><input class="in num" id="nDate" type="date" value="${today()}"></label>
@@ -551,12 +555,22 @@ function renderCredit(){
       <div class="card"><h3>وەرگرتنی پارە</h3><div class="formgrid">
         <label class="fld"><span>بڕی پارە (دینار)</span><input class="in num" id="pAmt" inputmode="decimal" dir="ltr"></label>
         <label class="fld"><span>بەروار</span><input class="in num" id="pDate" type="date" value="${today()}"></label>
+        <label class="fld"><span>واسڵ کراوە تا بەرواری (ئارەزوومەندانە)</span><input class="in num" id="pSettle" type="date"></label>
         <label class="fld"><span>تێبینی</span><input class="in" id="pNote"></label></div>
+        <p class="note" id="pHint">ئەگەر بەشێک لە قەرزەکەی داوە، بەرواریک دیاری بکە و بڕی قەرزی تا ئەو بەروارە خۆکار دەنووسرێت.</p>
         <button class="btn primary" data-act="pay">پارەکە تۆمار بکە</button></div>
-      <div class="card"><h3>کەشف حساب</h3><div class="list">`+
-      (ents.length?ents.map(e=>`<div class="li"><div class="grow"><b class="num">${esc(e.date)}</b><br><small class="muted">${e.kind==='sale'?`قەرز · ${credDesc(e)}`:`پارەی وەرگیراو${e.note?' · '+esc(e.note):''}`}</small></div>
-        <span class="amt num ${e.kind==='sale'?'':'pill good'}">${e.kind==='sale'?'':'−'}${fmt(e.amount)}</span><button class="icon" data-del="credit:${esc(e.id)}" aria-label="لابردن">×</button></div>`).join('')
-       :`<p class="empty">هێشتا هیچ قەرزێک یان پارەیەک تۆمار نەکراوە.</p>`)+`</div></div>
+      <div class="card"><h3>کەشف حساب</h3>
+        <div class="formgrid">
+          <label class="fld"><span>لە بەرواری</span><input class="in num" id="stFrom" type="date" value="${esc(stFrom)}"></label>
+          <label class="fld"><span>تا بەرواری</span><input class="in num" id="stTo" type="date" value="${esc(stTo)}"></label></div>
+        <div class="tiles">
+          <div class="tile key"><small>کۆی قەرز لەم ماوەیە</small><b class="num">${fmt(sum(rSales,'amount'))}</b></div>
+          <div class="tile"><small>کۆی لیتر</small><b class="num">${fmtL(sum(rSales,'liters'))}</b></div>
+          <div class="tile"><small>پارەی وەرگیراو</small><b class="num">${fmt(sum(rPays,'amount'))}</b></div></div>
+        ${fuelKeys.length?`<div class="scroll"><table class="tbl" style="min-width:0"><thead><tr><th>جۆری سوتەمەنی</th><th>لیتر</th><th>بڕی پارە</th></tr></thead><tbody>${fuelKeys.map(k=>`<tr><td>${k==='cash'?'نەقد / شتی دیکە':sw(k)+' '+FUEL[k].n}</td><td class="num">${byFuel[k].l?fmtL(byFuel[k].l):'—'}</td><td class="num">${fmt(byFuel[k].a)}</td></tr>`).join('')}</tbody></table></div>`:''}
+        <div class="list">${rEnts.length?rEnts.map(e=>`<div class="li"><div class="grow"><b class="num">${esc(e.date)}</b>${e.kind==='sale'&&settledTo&&e.date<=settledTo?' <span class="pill good">واسڵ کراوە</span>':''}<br><small class="muted">${e.kind==='sale'?`قەرز · ${credDesc(e)}`:`پارەی وەرگیراو${e.settledTo?` · واسڵ تا <span class="num">${esc(e.settledTo)}</span>`:''}${e.note?' · '+esc(e.note):''}`}</small></div>
+          <span class="amt num ${e.kind==='sale'?'':'pill good'}">${e.kind==='sale'?'':'−'}${fmt(e.amount)}</span><button class="icon" data-del="credit:${esc(e.id)}" aria-label="لابردن">×</button></div>`).join('')
+         :`<p class="empty">${ents.length?'هیچ تۆمارێک لەم ماوەیەدا نییە.':'هێشتا هیچ قەرزێک یان پارەیەک تۆمار نەکراوە.'}</p>`}</div></div>
       <div class="card"><h3>سڕینەوەی کڕیار</h3><p class="note">کڕیارەکە لەگەڵ هەموو قەرز و پارە وەرگیراوەکانی دەسڕدرێتەوە و ناگەڕێتەوە.</p><button class="btn" data-del="cust:${esc(c.id)}">سڕینەوەی کڕیار و هەموو قەرزەکانی</button></div>`;
     box.innerHTML=h; calcLast.n=null; creditCalc('n',null); return;
   }
@@ -576,7 +590,6 @@ function renderCredit(){
   const loose=allEntries().filter(e=>e.kind==='sale'&&!e.customerId).sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,50);
   if(loose.length) h+=`<div class="card"><h2>قەرزی دەستی و خەرجی</h2><p class="note">ئەمانە بە هەژماری هیچ کڕیارێکەوە نەبەسترانەتەوە.</p><div class="list">`+
     loose.map(e=>`<div class="li"><div class="grow"><b>${esc(entName(e))}</b>${MODE_LBL[e.mode]?` <span class="pill">${MODE_LBL[e.mode]}</span>`:''}<br><small class="muted"><span class="num">${esc(e.date)}</span> · ${credDesc(e)}</small></div><span class="amt num">${fmt(e.amount)}</span><button class="icon" data-del="credit:${esc(e.id)}" aria-label="لابردن">×</button></div>`).join('')+`</div></div>`;
-  const expTotal=monthExp.reduce((a,e)=>a+(+e.amount||0),0);
   h+=`<details class="card"><summary>+ خەرجی نوێ</summary><div class="formgrid">
       <label class="fld"><span>بەروار</span><input class="in num" id="eDate" type="date" value="${today()}"></label>
       <label class="fld"><span>شەفت</span><select class="in" id="eShift"><option value="1">شەفتی یەکەم</option><option value="2" ${new Date().getHours()<15?'':'selected'}>شەفتی دووەم</option></select></label>
@@ -585,10 +598,7 @@ function renderCredit(){
       <label class="fld"><span>بڕی پارە (دینار)</span><input class="in num" id="eAmt" inputmode="decimal" dir="ltr"></label>
       <label class="fld"><span>تێبینی</span><input class="in" id="eNote" autocomplete="off"></label></div>
       <p class="note">خەرجی وەک قەرز ناژمێردرێت و لە حسابی کڕیارەکان زیاد نابێت.</p>
-      <button class="btn primary" data-act="addexp">خەرجییەکە تۆمار بکە</button></details>
-    <div class="card"><div class="hint"><h2>خەرجییەکانی ئەم مانگە</h2><b class="num">${fmt(expTotal)}</b></div><div class="list">`+
-    (monthExp.length?monthExp.map(e=>`<div class="li"><div class="grow"><b>${esc(e.cat)}</b><br><small class="muted"><span class="num">${esc(e.date)}</span>${expLine(e)?' · '+expLine(e):''}</small></div><span class="amt num">${fmt(e.amount)}</span><button class="icon" data-del="expense:${esc(e.id)}" aria-label="لابردن">×</button></div>`).join('')
-      :`<p class="empty">لەم مانگەدا خەرجی تۆمار نەکراوە.</p>`)+`</div></div>`;
+      <button class="btn primary" data-act="addexp">خەرجییەکە تۆمار بکە</button></details>`;
   box.innerHTML=h;
 }
 async function addDebtsExpense(){
@@ -597,7 +607,7 @@ async function addDebtsExpense(){
   if(!db) return toast('پەیوەندی بە داتابەیسەوە نییە','bad');
   await guard(async()=>{
     await db.collection('expenses').add({date,shiftKey:date+'_'+no,cat:$('#eCat').value,who:$('#eWho').value.trim(),amount:Math.round(amt),note:$('#eNote').value.trim(),ts:Date.now()});
-    await loadMonthExpenses(); renderCredit(); toast('خەرجییەکە تۆمار کرا');
+    renderCredit(); toast('خەرجییەکە تۆمار کرا');
   });
 }
 async function addCustomer(){
@@ -607,13 +617,20 @@ async function addCustomer(){
     await loadCustomers(); renderCredit(); toast('کڕیارەکە زیاد کرا');
   });
 }
+function settleCalc(cid,D){
+  const c=customers.find(x=>x.id===cid)||{}, ents=allEntries().filter(e=>e.customerId===cid);
+  const paid=ents.filter(e=>e.kind==='pay').reduce((t,e)=>t+(+e.amount||0),0);
+  const upTo=(N(c.open)||0)+ents.filter(e=>e.kind==='sale'&&e.date<=D).reduce((t,e)=>t+(+e.amount||0),0);
+  const after=ents.filter(e=>e.kind==='sale'&&e.date>D).reduce((t,e)=>t+(+e.amount||0),0);
+  return {due:Math.max(0,Math.round(upTo-paid)),after:Math.round(after)};
+}
 async function addPayment(){
   const amt=N($('#pAmt').value), date=$('#pDate').value||today();
   if(!(amt>0)) return toast('بڕی پارەکە بنووسە','warn');
   await guard(async()=>{
     const m=date.slice(0,7);
     if(!cfg.start||m<cfg.start) await saveCfg({start:m});
-    await db.collection('credit').add({kind:'pay',customerId:selCust,date,m,amount:Math.round(amt),note:$('#pNote').value.trim(),ts:Date.now()});
+    await db.collection('credit').add({kind:'pay',customerId:selCust,date,m,amount:Math.round(amt),settledTo:$('#pSettle').value||null,note:$('#pNote').value.trim(),ts:Date.now()});
     await refreshMonth(m); renderCredit(); toast('پارەکە تۆمار کرا');
   });
 }
@@ -637,7 +654,6 @@ async function doDelete(spec){
       await db.doc('expenses/'+id).delete();
       if(view==='shift'){expenses=await loadExpenses(S.date);renderShiftExp();recalc();}
       else if(view==='report') await loadReport();
-      else if(view==='credit'){await loadMonthExpenses();renderCredit();}
       toast('لابرا');
     });
     return;
@@ -707,7 +723,7 @@ async function show(v){
   $('#ctx').hidden=!(v==='shift'||v==='tanks');
   window.scrollTo(0,0);
   if(v==='report') loadReport();
-  else if(v==='credit'){await guard(async()=>{await loadCustomers();await loadCredit();await loadMonthExpenses();});renderCredit();}
+  else if(v==='credit'){await guard(async()=>{await loadCustomers();await loadCredit();});renderCredit();}
   else if(v==='prices') renderPrices();
   else if(S&&v==='shift'){await guard(async()=>{await loadCustomers();await loadCredit();});renderShiftCredit();recalc();}
 }
@@ -777,13 +793,23 @@ function wire(){
   $('#repNext').addEventListener('click',()=>{$('#repDate').value=shiftDay($('#repDate').value||today(),-1);loadReport();});
   $('#repCsv').addEventListener('click',exportCsv);
   $('#crBody').addEventListener('click',e=>{
-    const c=e.target.closest('[data-cust]'); if(c){selCust=c.dataset.cust;renderCredit();window.scrollTo(0,0);return;}
+    const c=e.target.closest('[data-cust]'); if(c){selCust=c.dataset.cust;stFrom='';stTo='';renderCredit();window.scrollTo(0,0);return;}
     const a=e.target.closest('[data-act]'); if(!a) return;
     if(a.dataset.act==='back'){selCust=null;renderCredit();}
     else if(a.dataset.act==='addcust') addCustomer();
     else if(a.dataset.act==='pay') addPayment();
     else if(a.dataset.act==='newcredit') addCustomerCredit();
     else if(a.dataset.act==='addexp') addDebtsExpense();
+  });
+  $('#crBody').addEventListener('change',e=>{
+    const id=e.target.id;
+    if(id==='stFrom'||id==='stTo'){ if(id==='stFrom') stFrom=e.target.value; else stTo=e.target.value; renderCredit(); }
+    else if(id==='pSettle'){
+      const D=e.target.value, hint=$('#pHint'); if(!D){hint.textContent='';return;}
+      const r=settleCalc(selCust,D);
+      hint.textContent=`قەرزی ماوە تا ${D}: ${fmt(r.due)} دینار · قەرزی دوای ئەو بەروارە: ${fmt(r.after)} دینار`;
+      $('#pAmt').value=r.due>0?String(r.due):'';
+    }
   });
   $('#prBody').addEventListener('click',e=>{if(e.target.id==='priceSave') savePrices();});
   document.addEventListener('click',e=>{

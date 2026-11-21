@@ -163,7 +163,7 @@ function setStatus(kind){
   const map={loading:['کردنەوە…',''],new:['شەفتی نوێیە و هێشتا پاشەکەوت نەکراوە','warn'],dirty:['گۆڕانکارییەکانت پاشەکەوت نەکراون','warn'],saved:['پاشەکەوت کراوە','good'],nodb:['پەیوەندی بە داتابەیسەوە نییە','bad']};
   const [t,c]=map[kind]; el.textContent=t; el.className='pill '+c;
 }
-function setSeg(no){$$('.seg button').forEach(b=>b.setAttribute('aria-checked',String(+b.dataset.shift===no)));}
+function setSeg(no){$$('#ctx .seg button[data-shift]').forEach(b=>b.setAttribute('aria-checked',String(+b.dataset.shift===no)));}
 function markDirty(){dirty=true;setStatus('dirty');}
 async function openShift(date,no){
   const my=++loadTok; setStatus('loading'); setSeg(no);
@@ -608,6 +608,7 @@ function renderCredit(){
         <p class="note" id="pHint">ئەگەر بەشێک لە قەرزەکەی داوە، بەرواریک دیاری بکە و بڕی قەرزی تا ئەو بەروارە خۆکار دەنووسرێت.</p>
         <button class="btn primary" data-act="pay">پارەکە تۆمار بکە</button></div>
       <div class="card"><h3>کەشف حساب</h3>
+        <button class="btn" data-act="acctcsv">دابەزاندنی حسابی ${esc(c.name)} (CSV)</button>
         <div class="formgrid">
           <label class="fld"><span>لە بەرواری</span><input class="in num" id="stFrom" type="date" value="${esc(stFrom)}"></label>
           <label class="fld"><span>تا بەرواری</span><input class="in num" id="stTo" type="date" value="${esc(stTo)}"></label></div>
@@ -657,6 +658,25 @@ async function addDebtsExpense(){
     await db.collection('expenses').add({date,shiftKey:date+'_'+no,cat:$('#eCat').value,who:$('#eWho').value.trim(),amount:Math.round(amt),note:$('#eNote').value.trim(),ts:Date.now()});
     renderCredit(); toast('خەرجییەکە تۆمار کرا');
   });
+}
+async function exportAccount(){
+  if(!dl) return toast('دابەزاندن لێرە بەردەست نییە','warn');
+  const c=customers.find(x=>x.id===selCust); if(!c) return;
+  const all=allEntries().filter(e=>e.customerId===c.id).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.ts||0)-(b.ts||0));
+  const inR=e=>(!stFrom||e.date>=stFrom)&&(!stTo||e.date<=stTo);
+  let run=N(c.open)||0, debt=0, liters=0, paid=0;
+  const out=[['Customer',c.name],['Phone',c.phone||''],['Opening debt',N(c.open)||0],['From',stFrom||''],['To',stTo||''],[],
+    ['Date','Type','Fuel','Liters','Price','Amount IQD','Plate','Settled through','Note','Balance after']];
+  all.forEach(e=>{
+    const sale=e.kind==='sale'; run+=(sale?1:-1)*(+e.amount||0);
+    if(!inR(e)) return;
+    if(sale){debt+=+e.amount||0; liters+=+e.liters||0;} else paid+=+e.amount||0;
+    out.push([e.date,sale?'Debt':'Payment',sale?(FUEL[e.fuel]?FUEL[e.fuel].n:'Cash/other'):'',sale?(e.liters||''):'',sale?(rcPrice(e)||''):'',(sale?1:-1)*(+e.amount||0),e.plate||'',e.settledTo||'',e.note||'',run]);
+  });
+  if(out.length<=8) return toast('هیچ تۆمارێک نییە بۆ دابەزاندن','warn');
+  out.push([]); out.push(['Total debts','','',liters,'',debt]); out.push(['Total payments','','','','',paid]); out.push(['Balance now','','','','',run]);
+  try{await dl.save({filename:'account-'+c.name.replace(/[^\w\u0600-\u06FF-]+/g,'_')+'.csv',data:'\ufeff'+out.map(csvRow).join('\n')});}
+  catch(e){if(!e||e.code!=='declined') toast('دابەزاندن سەرنەکەوت','bad');}
 }
 async function addCustomer(){
   const name=$('#cName').value.trim(); if(!name) return toast('ناوی کڕیار بنووسە','warn');
@@ -858,6 +878,7 @@ function wire(){
     else if(a.dataset.act==='pay') addPayment();
     else if(a.dataset.act==='newcredit') addCustomerCredit();
     else if(a.dataset.act==='addexp') addDebtsExpense();
+    else if(a.dataset.act==='acctcsv') exportAccount();
   });
   $('#crBody').addEventListener('change',e=>{
     const id=e.target.id;
